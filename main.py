@@ -1,19 +1,17 @@
+import simplejson
 import tkinter as tk
 import tkinter.messagebox
 from tkinter import *
 import serial as sr
-import time
-import sys
 import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
 
-global s
-s = sr.Serial('COM1', 9600)
+global ecg, gsr, hb, spo2
+s = sr.Serial('COM3', 115200)
 
-data = np.array([])
+data_ecg = np.array([])
+data_gsr = np.array([])
 cond = False
 
 
@@ -105,15 +103,15 @@ class Win2:
         self.OptionFrame2 = tk.LabelFrame(self.frame, bd = 0, bg = 'white')
         self.OptionFrame2.grid(row = 1, column = 0, pady = 10)
         # ===== Button treatments =====
-        self.btn1 = tk.Button(self.OptionFrame1, text='Social anxiety', font = ('Verdana', 10, 'italic'), width = 12, command = self.test)
+        self.btn1 = tk.Button(self.OptionFrame1, text = 'Social anxiety', font = ('Verdana', 10, 'italic'), width = 12, command = self.test)
         self.btn1.grid(row = 0, column = 0, pady = 10, padx = 5)
-        self.btn2 = tk.Button(self.OptionFrame1, text='anxiety1', font = ('Verdana', 10, 'italic'), width = 12)
+        self.btn2 = tk.Button(self.OptionFrame1, text = 'anxiety1', font = ('Verdana', 10, 'italic'), width = 12)
         self.btn2.grid(row = 0, column = 1, pady = 10, padx = 5)
-        self.btn3 = tk.Button(self.OptionFrame1, text='anxiety2', font = ('Verdana', 10, 'italic'), width = 12)
+        self.btn3 = tk.Button(self.OptionFrame1, text = 'anxiety2', font = ('Verdana', 10, 'italic'), width = 12)
         self.btn3.grid(row = 0, column = 2, pady = 10, padx = 5)
-        self.btn4 = tk.Button(self.OptionFrame1, text='anxiety3', font = ('Verdana', 10, 'italic'), width = 12)
+        self.btn4 = tk.Button(self.OptionFrame1, text = 'anxiety3', font = ('Verdana', 10, 'italic'), width = 12)
         self.btn4.grid(row = 0, column = 3, pady = 10, padx = 5)
-        self.btn5 = tk.Button(self.OptionFrame1, text='anxiety4', font = ('Verdana', 10, 'italic'), width = 12)
+        self.btn5 = tk.Button(self.OptionFrame1, text = 'anxiety4', font = ('Verdana', 10, 'italic'), width = 12)
         self.btn5.grid(row = 0, column = 4, pady = 10, padx = 5)
         # ===== Option buttons =====
         self.btnExit = tk.Button(self.OptionFrame2, text = 'Exit', width = 15, command = self.iExit)
@@ -146,6 +144,7 @@ def plot_stop():
 
 class Win3:
     global s
+
     def __init__(self, master):
         self.master = master
         self.master.resizable(0, 0)
@@ -156,54 +155,85 @@ class Win3:
         self.w = w = tk.Label(master, image = imageLogin)
         w.imageLogin = imageLogin
         # ===== Place of the elements =====
+        self.frame = tk.Frame(self.master, bg = 'white')
         w.pack(pady = 0, padx = 0)
+        self.frame.place(x = 1430, y = 30)
         self.createWidgets()
 
     # ===== Arduino reader =====
     def plot_data(self):
-        global cond, data
+        global cond, data_ecg, data_gsr, ecg, gsr, hb, spo2
         if cond:
-            ecg = s.readline().decode('utf-8')
-            if len(data) < 100:
-                data = np.append(data, float(ecg[0:4]))
+            while s.inWaiting() == 0:
+                pass
+            jsonResult = s.readline()
+            try:
+                jsonObject = simplejson.loads(jsonResult)
+                ecg = jsonObject['ecg']
+                gsr = jsonObject['gsr']
+                hb = jsonObject['hb']
+                spo2 = jsonObject['spo2']
+            except Exception:
+                pass
+            ecg = float(ecg) / 1024 * 5
+            gsr = float(gsr)
+            if len(data_ecg) < 100:
+                data_ecg = np.append(data_ecg, ecg)
+                data_gsr = np.append(data_gsr, gsr)
             else:
-                data[0:99] = data[1:100]
-                data[99] = float(ecg[0:4])
-            self.linesx.set_xdata(np.arange(0, len(data)))
-            self.linesx.set_ydata(data)
+                data_ecg[0:99] = data_ecg[1:100]
+                data_gsr[0:99] = data_gsr[1:100]
+                data_ecg[99] = ecg
+                data_gsr[99] = gsr
+                # ECG plot
+            self.linesx.set_xdata(np.arange(0, len(data_ecg)))
+            self.linesx.set_ydata(data_ecg)
+                # GSR plot
+            self.linesy.set_xdata(np.arange(0, len(data_gsr)))
+            self.linesy.set_ydata(data_gsr)
+                # HB
             self.canvas.draw()
+            self.hb_data = tk.Label(self.label_data, text = str(hb), font=('Verdana', 24), width=10, bg = 'white')
+            self.hb_data.grid(row = 0, column = 1, pady = 10, padx = 1)
+            self.spo2_data = tk.Label(self.label_data, text = str(spo2), font = ('Verdana', 24), width = 10, bg='white')
+            self.spo2_data.grid(row = 1, column = 1, pady = 10, padx = 1)
         self.master.after(1, self.plot_data)
 
     # ===== Figures for plot =====
     def createWidgets(self):
         fig = Figure(figsize = (15, 5), dpi = 75)
-        ax = fig.add_subplot(311)
-        ay = fig.add_subplot(312)
-        az = fig.add_subplot(313)
+            # ECG
+        ax = fig.add_subplot(211)
+            # GSR
+        ay = fig.add_subplot(212)
         # ===== Labels and grids =====
         ax.set_ylabel('Voltage [V]')
         ay.set_ylabel('Conductance [S]')
-        az.set_ylabel('O2')
         ax.grid()
         ay.grid()
-        az.grid()
         # ===== Axis limits =====
-        ax.set_xlim(0, 150)
-        ax.set_ylim(0, 1024)
-        ay.set_xlim(0, 150)
-        az.set_xlim(0, 150)
+        ax.set_xlim(0, 120)
+        ax.set_ylim(1, 3)
+        ay.set_xlim(0, 120)
+        ay.set_ylim(400, 600)
 
         fig.tight_layout()
 
         # ===== Lines to plot =====
-        self.linesx = ax.plot([], [])[0]
-        self.linesy = ay.plot([], [])[0]
-        self.linesz = az.plot([], [])[0]
+        self.linesx = ax.plot([], [], 'k')[0]
+        self.linesy = ay.plot([], [], 'k')[0]
 
         canvas = FigureCanvasTkAgg(fig, master = self.master)
         canvas.get_tk_widget().place(x = 170, y = 550, width = 1700, height = 450)
         canvas.draw()
         self.canvas = canvas
+        # ===== HB and SPO2 =====
+        self.label_data = tk.LabelFrame(self.frame, bd = 0, bg = 'white')
+        self.label_data.grid(row = 2, column = 2, pady = 10)
+        self.hb_label = tk.Label(self.label_data, text = 'BPM', font = ('Verdana', 24, 'bold'), width = 10, bg = 'white')
+        self.hb_label.grid(row = 0, column = 0, pady = 10, padx = 5)
+        self.spo2_label = tk.Label(self.label_data, text = 'SPO2', font = ('Verdana', 24, 'bold'), width = 10, bg = 'white')
+        self.spo2_label.grid(row = 1, column = 0, pady = 10, padx = 5)
         # ===== Buttons to start or stop plots =====
         self.master.update()
         start = tk.Button(self.master, text = 'Start', font = ('Verdana', 12), width = 12, command = lambda: plot_start())
